@@ -1,92 +1,72 @@
 package online.mediafilez.analyzer;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 public class MediaInfo {
-    private String format;
-    private int width;
-    private int height;
-    private double duration;
-    private double frameRate;
-    private int videoBitrate;
+    private final String format;
+    private final double duration;
 
-    private String videoCodec;
-    private String audioCodec;
-    private int audioBitrate;
-    private int sampleRate;
-    private int audioChannels;
+    private final Map<String, String> containerDetails = new LinkedHashMap<>();
+    private final List<MediaStreamInfo> streams = new ArrayList<>();
+    private final Map<String, String> metadata = new LinkedHashMap<>();
 
-    public MediaInfo(String format, int width, int height, double duration, double frameRate, int videoBitrate,
-                     String videoCodec, String audioCodec, int audioBitrate, int sampleRate, int audioChannels) {
+    public MediaInfo(String format, double duration) {
         this.format = format;
-        this.width = width;
-        this.height = height;
         this.duration = duration;
-        this.frameRate = frameRate;
-        this.videoBitrate = videoBitrate;
-        this.videoCodec = videoCodec;
-        this.audioCodec = audioCodec;
-        this.audioBitrate = audioBitrate;
-        this.sampleRate = sampleRate;
-        this.audioChannels = audioChannels;
     }
 
-    public String getFormat() {
-        return format;
+    public List<MediaStreamInfo> getStreams() {
+        return List.copyOf(streams);
     }
 
-    public int getWidth() {
-        return width;
+    public void addContainerDetail(String label, String value) {
+        containerDetails.put(label, value);
     }
 
-    public int getHeight() {
-        return height;
+    public void addStream(MediaStreamInfo stream) {
+        streams.add(stream);
     }
 
-    public double getDuration() {
-        return duration;
-    }
-
-    public double getFrameRate() {
-        return frameRate;
-    }
-
-    public int getVideoBitrate() {
-        return videoBitrate;
-    }
-
-    public String getVideoCodec() {
-        return videoCodec;
-    }
-
-    public String getAudioCodec() {
-        return audioCodec;
-    }
-
-    public int getAudioBitrate() {
-        return audioBitrate;
-    }
-
-    public int getSampleRate() {
-        return sampleRate;
-    }
-
-    public int getAudioChannels() {
-        return audioChannels;
+    public void setMetadata(Map<String, String> metadata) {
+        this.metadata.clear();
+        this.metadata.putAll(metadata);
     }
 
     @Override
     public String toString() {
-        return "MediaInfo{" +
-                "format='" + format + '\'' +
-                ", width=" + width +
-                ", height=" + height +
-                ", duration=" + duration +
-                ", frameRate=" + frameRate +
-                ", videoBitrate=" + videoBitrate +
-                ", videoCodec='" + videoCodec + '\'' +
-                ", audioCodec='" + audioCodec + '\'' +
-                ", audioBitrate=" + audioBitrate +
-                ", sampleRate=" + sampleRate +
-                ", audioChannels=" + audioChannels +
-                '}';
+        StringBuilder report = new StringBuilder(ReportFormatter.section("Media summary"));
+        report.append(ReportFormatter.row("Detected format", format));
+        report.append(ReportFormatter.row("Duration", ReportFormatter.duration(duration)));
+        report.append(ReportFormatter.row("Video streams", countStreams("video")));
+        report.append(ReportFormatter.row("Audio streams", countStreams("audio")));
+        report.append(ReportFormatter.row("Subtitle streams", countStreams("subtitle")));
+
+        report.append(ReportFormatter.rows(containerDetails));
+
+        for (MediaStreamInfo stream : streams) {
+            report.append(stream);
+        }
+
+        report.append(ReportFormatter.section("File metadata"));
+        if (metadata.isEmpty()) {
+            report.append("  No file metadata reported.\n");
+        } else {
+            report.append(ReportFormatter.rows(metadata));
+        }
+        report.append("\nUnknown = not reported. Estimated values are labeled.\n");
+        return report.toString();
+    }
+
+    private int countStreams(String type) {
+        int count = 0;
+        for (MediaStreamInfo stream : streams) {
+            if (type.equals(stream.getType())) {
+                count++;
+            }
+        }
+        return count;
     }
 }
