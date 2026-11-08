@@ -12,12 +12,25 @@ import java.util.Locale;
 
 public class UrlAnalyzer {
     private final String url;
+    private final QueryParameterAnalyzer queryAnalyzer = new QueryParameterAnalyzer();
+    private boolean webPage;
 
     public UrlAnalyzer(String url) {
         this.url = url;
     }
 
     public String analyze() {
+        return analyze(true);
+    }
+
+    /** Set inspectHttp=false for offline URL structure and parameter analysis. */
+    public String analyze(boolean inspectHttp) {
+        return analyze(inspectHttp, false);
+    }
+
+    /** Detailed explanations remain available with --details; compact display is the default. */
+    public String analyze(boolean inspectHttp, boolean details) {
+        webPage = false;
         if (url == null || url.isBlank()) {
             System.err.println("Invalid URL: URL must not be empty or blank.");
             return null;
@@ -30,8 +43,10 @@ public class UrlAnalyzer {
                 return null;
             }
 
-            printResult(uri);
-            printHttpResult(uri);
+            printResult(uri, details);
+            if (inspectHttp) {
+                printHttpResult(uri);
+            }
             // A fragment identifies a position in a resource; it is not sent to the server.
             String mediaUrl = uri.toASCIIString();
             int fragment = mediaUrl.indexOf('#');
@@ -40,6 +55,11 @@ public class UrlAnalyzer {
             System.err.println("Invalid URL: " + e.getMessage());
             return null;
         }
+    }
+
+    /** True only when the HTTP response explicitly identifies a non-media web/data document. */
+    public boolean isWebPage() {
+        return webPage;
     }
 
     private boolean isValid(URI uri) {
@@ -78,16 +98,20 @@ public class UrlAnalyzer {
         };
     }
 
-    private void printResult(URI uri) {
+    private void printResult(URI uri, boolean details) {
         String filename = getFilename(uri);
         String extension = getExtension(filename);
         boolean https = "https".equalsIgnoreCase(uri.getScheme());
         int port = uri.getPort() == -1 ? (https ? 443 : 80) : uri.getPort();
 
+        UrlExplainer.DomainParts domain = UrlExplainer.domainParts(uri.getHost());
         StringBuilder report = new StringBuilder(ReportFormatter.section("URL analysis"));
-        report.append(ReportFormatter.row("URL", uri.toASCIIString()));
+        report.append(ReportFormatter.row("URL", QueryParameterAnalyzer.redactUrl(uri)));
         report.append(ReportFormatter.row("Valid HTTP(S) syntax", "Yes"));
         report.append(ReportFormatter.row("Domain name", uri.getHost()));
+        report.append(ReportFormatter.row("Registered domain", domain.registeredDomain()));
+        report.append(ReportFormatter.row("Public suffix", domain.publicSuffix()));
+        report.append(ReportFormatter.row("Subdomain", domain.subdomain()));
         report.append(ReportFormatter.row("Protocol", uri.getScheme().toLowerCase(Locale.ROOT)));
         report.append(ReportFormatter.row("Uses HTTPS", https ? "Yes" : "No"));
         report.append(ReportFormatter.row("Port", port));
@@ -95,23 +119,20 @@ public class UrlAnalyzer {
         report.append(ReportFormatter.row("Filename", filename.isEmpty() ? "None" : filename));
         report.append(ReportFormatter.row("Extension", extension.isEmpty() ? "None" : extension));
         report.append(ReportFormatter.row("Type from extension", getType(extension)));
-        report.append(ReportFormatter.row("Query (raw)", uri.getRawQuery() == null ? "None" : uri.getRawQuery()));
-        report.append(ReportFormatter.row("Query parameter count", getQueryParameterCount(uri)));
-        report.append(ReportFormatter.row("Fragment (raw)", uri.getRawFragment() == null ? "None" : uri.getRawFragment()));
+        report.append(ReportFormatter.row("Query (raw)", QueryParameterAnalyzer.redactRawQuery(uri.getRawQuery())));
+        report.append(ReportFormatter.row("Query parameter count", queryAnalyzer.parse(uri.getRawQuery()).size()));
+        String displayUrl = QueryParameterAnalyzer.redactUrl(uri);
+        report.append(ReportFormatter.row("Fragment (raw)", uri.getRawFragment() == null ? "None"
+                : displayUrl.substring(displayUrl.indexOf('#') + 1)));
+        if (details) {
+            // No existing explanatory feature is removed; users can still request it.
+            report.append(UrlExplainer.explain(uri, domain));
+            report.append(queryAnalyzer.report(uri));
+        } else {
+            // Keep the original URL analysis as the sole section for URL information.
+            report.append(queryAnalyzer.compactReport(uri));
+        }
         System.out.print(report);
-    }
-
-    private int getQueryParameterCount(URI uri) {
-        if (uri.getRawQuery() == null || uri.getRawQuery().isEmpty()) {
-            return 0;
-        }
-        int count = 0;
-        for (String parameter : uri.getRawQuery().split("&")) {
-            if (!parameter.isEmpty()) {
-                count++;
-            }
-        }
-        return count;
     }
 
     private void printHttpResult(URI uri) {
@@ -131,11 +152,18 @@ public class UrlAnalyzer {
 
             System.out.print(ReportFormatter.row("Request method", response.request().method()));
             System.out.print(ReportFormatter.row("Status code", response.statusCode()));
-            System.out.print(ReportFormatter.row("Final URL", response.uri()));
+            System.out.print(ReportFormatter.row("Final URL", QueryParameterAnalyzer.redactUrl(response.uri())));
             System.out.print(ReportFormatter.row("Redirect count", getRedirectCount(response)));
             System.out.print(ReportFormatter.row("HTTP version", response.version()));
             System.out.print(ReportFormatter.row("Header request time", ReportFormatter.number(
                     (System.nanoTime() - started) / 1_000_000.0, "ms")));
+            String contentType = header(response, "Content-Type").toLowerCase(Locale.ROOT);
+            // Only skip on an explicit HTML/text/JSON response. Unknown content types
+            // are still attempted by the original MediaAnalyzer as before.
+            webPage = contentType.startsWith("text/html")
+                    || contentType.startsWith("application/xhtml+xml")
+                    || contentType.startsWith("application/json")
+                    || contentType.startsWith("text/plain");
             System.out.print(ReportFormatter.row("Content type", header(response, "Content-Type")));
             System.out.print(ReportFormatter.row("Size from HTTP", ReportFormatter.size(getContentSize(response))));
             System.out.print(ReportFormatter.row("Accept ranges", header(response, "Accept-Ranges")));
