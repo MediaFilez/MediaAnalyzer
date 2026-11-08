@@ -23,6 +23,12 @@
     </properties>
 
     <dependencies>
+        <!-- Public Suffix List-based domain analysis (e.g. example.co.uk). -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>33.7.2-jre</version>
+        </dependency>
         <dependency>
             <groupId>org.bytedeco</groupId>
             <artifactId>javacv-platform</artifactId>
